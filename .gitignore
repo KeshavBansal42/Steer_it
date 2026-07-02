@@ -1,0 +1,23 @@
+# Environments
+venv/
+env/
+.env
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# MediaPipe models
+hand_landmarker.task
+*.task
+
+# PyInstaller builds
+build/
+dist/
+*.spec
+
+# IDEs
+.vscode/
+.idea/
