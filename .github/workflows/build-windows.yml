@@ -37,7 +37,7 @@ jobs:
 
     - name: Build Executable with PyInstaller
       run: |
-        pyinstaller --onefile --hidden-import=vgamepad --hidden-import=cv2 --collect-all mediapipe main.py
+        pyinstaller --onefile --hidden-import=cv2 --collect-all mediapipe --collect-all vgamepad main.py
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
