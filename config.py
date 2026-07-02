@@ -17,11 +17,10 @@ STEERING_MAX_ANGLE = 45.0      # Max tilt angle in degrees for full lock
 STEERING_DEAD_ZONE = 3.0       # Degrees — ignore small jitter near center
 STEERING_SENSITIVITY = 2.0     # Multiplier curve exponent (1.0=linear, 2.0=quadratic)
 
-# Throttle / Brake (Yoke Push/Pull Method)
-# Measured as the change in normalized pixel distance between wrists.
-DEPTH_MAX_THROTTLE = 0.15      # 15% frame width expansion = full throttle
-DEPTH_MAX_BRAKE = 0.12         # 12% frame width contraction = full brake
-DEPTH_DEAD_ZONE = 0.02         # 2% deadzone to ignore jitter
+# Throttle / Brake (Pinch Virtual Triggers)
+# Measured as the reduction in normalized pixel distance between Index and Thumb tips.
+PINCH_MAX_TRIGGER = 0.10       # 10% frame width reduction = full throttle/brake
+PINCH_DEAD_ZONE = 0.02         # 2% deadzone to ignore resting jitter
 
 # One Euro Filter params
 FILTER_FREQ = 30.0             # Expected FPS

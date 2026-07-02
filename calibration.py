@@ -17,7 +17,8 @@ def run_calibration(camera, tracker, overlay) -> Tuple[float, float]:
     collection_time = 2.0 # seconds to collect data
     
     steer_samples = []
-    depth_samples = []
+    right_pinch_samples = []
+    left_pinch_samples = []
     
     while calibrating:
         ret, frame = camera.read()
@@ -51,14 +52,19 @@ def run_calibration(camera, tracker, overlay) -> Tuple[float, float]:
                 color = (0, 255, 0)
                 
                 # Collect samples
-                # Steering raw
+                # Steer raw
                 import math
                 angle_rad = math.atan2(rw.y - lw.y, rw.x - lw.x)
                 steer_samples.append(math.degrees(angle_rad))
                 
-                # Depth raw (2D pixel distance between wrists)
-                d_img = math.sqrt((rw.x - lw.x)**2 + (rw.y - lw.y)**2)
-                depth_samples.append(d_img)
+                # Pinch raw (Index Tip = 8, Thumb Tip = 4)
+                r_pinch = math.sqrt((right_hand.image_landmarks[8].x - right_hand.image_landmarks[4].x)**2 + 
+                                    (right_hand.image_landmarks[8].y - right_hand.image_landmarks[4].y)**2)
+                l_pinch = math.sqrt((left_hand.image_landmarks[8].x - left_hand.image_landmarks[4].x)**2 + 
+                                    (left_hand.image_landmarks[8].y - left_hand.image_landmarks[4].y)**2)
+                
+                right_pinch_samples.append(r_pinch)
+                left_pinch_samples.append(l_pinch)
                 
             else:
                 calibrating = False
@@ -81,30 +87,36 @@ def run_calibration(camera, tracker, overlay) -> Tuple[float, float]:
             
     cv2.destroyWindow("Steer_it Setup")
     
-    if steer_samples and depth_samples:
+    if steer_samples and right_pinch_samples and left_pinch_samples:
         avg_steer = sum(steer_samples) / len(steer_samples)
-        avg_depth = sum(depth_samples) / len(depth_samples)
+        avg_r_pinch = sum(right_pinch_samples) / len(right_pinch_samples)
+        avg_l_pinch = sum(left_pinch_samples) / len(left_pinch_samples)
         
-        print(f"Calibration successful! Neutral Steering: {avg_steer:.2f}°, Neutral Depth: {avg_depth:.3f}")
+        print(f"Calibration successful! Neutral Steering: {avg_steer:.2f}°, R-Pinch: {avg_r_pinch:.3f}, L-Pinch: {avg_l_pinch:.3f}")
         
         # Save
         with open(CALIBRATION_FILE, 'w') as f:
-            json.dump({"steering_neutral": avg_steer, "depth_neutral": avg_depth}, f)
+            json.dump({
+                "steering_neutral": avg_steer, 
+                "right_pinch_neutral": avg_r_pinch,
+                "left_pinch_neutral": avg_l_pinch
+            }, f)
             
-        return avg_steer, avg_depth
+        return avg_steer, avg_r_pinch, avg_l_pinch
     else:
-        print("Failed to collect calibration data. Using defaults (0,0).")
-        return 0.0, 0.0
+        print("Failed to collect calibration data. Using defaults.")
+        return 0.0, 0.2, 0.2
 
-def load_calibration() -> Tuple[float, float]:
+def load_calibration() -> Tuple[float, float, float]:
     if os.path.exists(CALIBRATION_FILE):
         try:
             with open(CALIBRATION_FILE, 'r') as f:
                 data = json.load(f)
                 s = data.get("steering_neutral", 0.0)
-                d = data.get("depth_neutral", 0.0)
-                print(f"Loaded calibration: Steering {s:.2f}°, Depth {d:.3f}")
-                return s, d
+                rp = data.get("right_pinch_neutral", 0.2)
+                lp = data.get("left_pinch_neutral", 0.2)
+                print(f"Loaded calibration: Steering {s:.2f}°, R-Pinch {rp:.3f}, L-Pinch {lp:.3f}")
+                return s, rp, lp
         except Exception as e:
             print(f"Failed to load {CALIBRATION_FILE}: {e}")
-    return 0.0, 0.0
+    return 0.0, 0.2, 0.2

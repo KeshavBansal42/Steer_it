@@ -35,11 +35,11 @@ def main():
 
     # Calibration
     if args.skip_calibration:
-        s_neut, d_neut = load_calibration()
+        s_neut, rp_neut, lp_neut = load_calibration()
     else:
-        s_neut, d_neut = run_calibration(camera, tracker, overlay)
+        s_neut, rp_neut, lp_neut = run_calibration(camera, tracker, overlay)
     
-    processor.set_calibration(s_neut, d_neut)
+    processor.set_calibration(s_neut, rp_neut, lp_neut)
 
     # FPS calculation
     prev_time = time.time()

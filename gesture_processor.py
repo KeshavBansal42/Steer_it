@@ -8,17 +8,20 @@ from filters import OneEuroFilter
 class GestureProcessor:
     def __init__(self):
         self.steering_neutral = 0.0
-        self.depth_neutral = 0.0
+        self.right_pinch_neutral = 0.2
+        self.left_pinch_neutral = 0.2
         
         t0 = time.time()
         self.steer_filter = OneEuroFilter(t0, 0.0, min_cutoff=config.FILTER_MINCUTOFF, beta=config.FILTER_BETA)
-        self.depth_filter = OneEuroFilter(t0, 0.0, min_cutoff=config.FILTER_MINCUTOFF, beta=config.FILTER_BETA)
+        self.throttle_filter = OneEuroFilter(t0, 0.0, min_cutoff=config.FILTER_MINCUTOFF, beta=config.FILTER_BETA)
+        self.brake_filter = OneEuroFilter(t0, 0.0, min_cutoff=config.FILTER_MINCUTOFF, beta=config.FILTER_BETA)
         
         self.is_calibrated = False
 
-    def set_calibration(self, steering_neutral: float, depth_neutral: float):
+    def set_calibration(self, steering_neutral: float, right_pinch_neutral: float, left_pinch_neutral: float):
         self.steering_neutral = steering_neutral
-        self.depth_neutral = depth_neutral
+        self.right_pinch_neutral = right_pinch_neutral
+        self.left_pinch_neutral = left_pinch_neutral
         self.is_calibrated = True
 
     def compute(self, hands: List[HandData]) -> Tuple[float, float, float, int]:
@@ -31,9 +34,10 @@ class GestureProcessor:
 
         t = time.time()
         
-        # Calculate Steering and Depth
+        # Signals
         raw_steering = 0.0
-        raw_depth = 0.0
+        raw_r_pinch = self.right_pinch_neutral # Default to no pinch
+        raw_l_pinch = self.left_pinch_neutral  # Default to no pinch
         mode = len(hands)
 
         if mode >= 2:
@@ -50,31 +54,43 @@ class GestureProcessor:
             angle_rad = math.atan2(r_wrist_img.y - l_wrist_img.y, r_wrist_img.x - l_wrist_img.x)
             raw_steering = math.degrees(angle_rad)
             
-            # --- Depth (Throttle / Brake) ---
-            # Yoke Push/Pull method: tracking the pixel distance between wrists
-            raw_depth = math.sqrt((r_wrist_img.x - l_wrist_img.x)**2 + (r_wrist_img.y - l_wrist_img.y)**2)
+            # --- Pinch (Throttle / Brake) ---
+            raw_r_pinch = math.sqrt((right_hand.image_landmarks[8].x - right_hand.image_landmarks[4].x)**2 + 
+                                    (right_hand.image_landmarks[8].y - right_hand.image_landmarks[4].y)**2)
+            raw_l_pinch = math.sqrt((left_hand.image_landmarks[8].x - left_hand.image_landmarks[4].x)**2 + 
+                                    (left_hand.image_landmarks[8].y - left_hand.image_landmarks[4].y)**2)
             
         else:
             # One hand fallback mode
-            wrist = hands[0].image_landmarks[0]
-            mcp = hands[0].image_landmarks[9]
+            hand = hands[0]
+            wrist = hand.image_landmarks[0]
+            mcp = hand.image_landmarks[9]
             
             # Steering
             angle_rad = math.atan2(wrist.y - mcp.y, wrist.x - mcp.x)
             raw_steering = math.degrees(angle_rad) - 90.0
             
-            # Depth (distance from wrist to knuckles in image space)
-            raw_depth = math.sqrt((mcp.x - wrist.x)**2 + (mcp.y - wrist.y)**2)
+            # Pinch
+            pinch = math.sqrt((hand.image_landmarks[8].x - hand.image_landmarks[4].x)**2 + 
+                              (hand.image_landmarks[8].y - hand.image_landmarks[4].y)**2)
+            if hand.handedness == "Right":
+                raw_r_pinch = pinch
+            else:
+                raw_l_pinch = pinch
 
         # Adjust for calibration
         raw_steering -= self.steering_neutral
         
-        # For depth, we want the difference from neutral
-        depth_diff = raw_depth - self.depth_neutral
+        # For pinch, a SMALLER distance means the trigger is pulled.
+        # We calculate "pull amount" as (neutral_distance - current_distance).
+        # Positive pull amount = trigger is being squeezed.
+        r_pull = self.right_pinch_neutral - raw_r_pinch
+        l_pull = self.left_pinch_neutral - raw_l_pinch
 
         # 3. Filter Signals
         filtered_steering = self.steer_filter(t, raw_steering)
-        filtered_depth = self.depth_filter(t, depth_diff)
+        filtered_r_pull = self.throttle_filter(t, r_pull)
+        filtered_l_pull = self.brake_filter(t, l_pull)
 
         # 4. Map to Output Ranges
         # Steering mapping
@@ -86,18 +102,18 @@ class GestureProcessor:
         steering_val = self._apply_curve(steering_val, config.STEERING_SENSITIVITY)
         steering_val = max(-1.0, min(1.0, steering_val)) # clamp
         
-        # Throttle / Brake mapping (depth)
+        # Throttle / Brake mapping (pinch virtual triggers)
         throttle_val = 0.0
         brake_val = 0.0
         
-        # Pushed forward (depth increases, positive difference) = throttle
-        if filtered_depth > config.DEPTH_DEAD_ZONE:
-            t_val = (filtered_depth - config.DEPTH_DEAD_ZONE) / (config.DEPTH_MAX_THROTTLE - config.DEPTH_DEAD_ZONE)
+        # Right hand pinch = Throttle
+        if filtered_r_pull > config.PINCH_DEAD_ZONE:
+            t_val = (filtered_r_pull - config.PINCH_DEAD_ZONE) / (config.PINCH_MAX_TRIGGER - config.PINCH_DEAD_ZONE)
             throttle_val = max(0.0, min(1.0, t_val))
             
-        # Pulled back (depth decreases, negative difference) = brake
-        elif filtered_depth < -config.DEPTH_DEAD_ZONE:
-            b_val = (abs(filtered_depth) - config.DEPTH_DEAD_ZONE) / (config.DEPTH_MAX_BRAKE - config.DEPTH_DEAD_ZONE)
+        # Left hand pinch = Brake
+        if filtered_l_pull > config.PINCH_DEAD_ZONE:
+            b_val = (filtered_l_pull - config.PINCH_DEAD_ZONE) / (config.PINCH_MAX_TRIGGER - config.PINCH_DEAD_ZONE)
             brake_val = max(0.0, min(1.0, b_val))
             
         return steering_val, throttle_val, brake_val, mode
