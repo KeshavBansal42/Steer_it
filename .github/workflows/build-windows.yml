@@ -23,7 +23,15 @@ jobs:
         VGAMEPAD_SKIP_VIGEMBUS_INSTALL: 'true'
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        # Temporarily remove vgamepad from requirements so we can patch it
+        Select-String -Path requirements.txt -Pattern 'vgamepad' -NotMatch | Out-File -FilePath req_tmp.txt
+        pip install -r req_tmp.txt
+        
+        # Clone, patch, and install vgamepad to bypass the registry query freeze
+        git clone https://github.com/yannbouteiller/vgamepad.git
+        python -c "import os; content = open('vgamepad/setup.py').read().replace('subprocess.check_output', '(lambda *a, **kw: \"\")'); open('vgamepad/setup.py', 'w').write(content)"
+        pip install ./vgamepad
+        
         pip install pyinstaller
 
     - name: Build Executable with PyInstaller
